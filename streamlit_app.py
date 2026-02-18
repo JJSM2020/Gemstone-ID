@@ -34,7 +34,7 @@ st.markdown("""
         background-color: #0f2922;
         border: 2px dashed #10b981;
         border-radius: 10px;
-        padding: 30px;
+        padding: 40px; /* Aumentei o padding para facilitar o toque no celular */
         text-align: center;
     }
     [data-testid='stFileUploader'] section:hover {
@@ -50,6 +50,8 @@ st.markdown("""
         font-weight: bold;
         transition: 0.3s;
         width: 100%;
+        padding: 10px;
+        font-size: 16px;
     }
     .stButton>button:hover {
         background-color: #059669;
@@ -68,13 +70,6 @@ st.markdown("""
     
     img {
         border-radius: 10px;
-    }
-    
-    /* Expander Webcam */
-    .streamlit-expanderHeader {
-        background-color: #0f2922;
-        color: #10b981;
-        border-radius: 5px;
     }
     
     .debug-box {
@@ -131,12 +126,12 @@ gem_info = {
 # --- 4. FUNÇÕES DE BACKEND (Otimizadas para Cloud) ---
 @st.cache_resource
 def load_model():
-    # Lista de locais possíveis onde o modelo pode estar
+    # Procura o modelo em vários lugares para garantir que ache na Cloud
     possible_paths = [
-        "models/gemstone_model.h5",   # Estrutura recomendada para GitHub
-        "gemstone_model.h5",          # Se estiver na raiz
-        "../models/gemstone_model.h5",# Estrutura local VS Code
-        "models/gemstone_model.h5"         # Backup modelo simples
+        "models/gemstone_model.h5",   # Estrutura ideal do GitHub
+        "gemstone_model.h5",          # Caso esteja na raiz
+        "../models/gemstone_model.h5",# Caso esteja rodando local
+        "models/gemstone_model.h5"         # Backup
     ]
     
     for path in possible_paths:
@@ -144,23 +139,22 @@ def load_model():
             try:
                 return tf.keras.models.load_model(path)
             except:
-                continue # Tenta o próximo se der erro
+                continue
                 
-    st.error("ERRO CRÍTICO: Modelo .h5 não encontrado! Verifique se a pasta 'models' foi enviada para o GitHub.")
+    st.error("ERRO CRÍTICO: Modelo .h5 não encontrado! Verifique a pasta 'models' no GitHub.")
     return None
 
 def get_class_names():
-    # Tenta ler do arquivo classes.txt (Ideal para Cloud)
+    # Prioridade: Arquivo classes.txt (Mais leve e seguro para Cloud)
     if os.path.exists("classes.txt"):
         with open("classes.txt", "r") as f:
-            # Lê linhas e remove quebras de linha (\n)
             return [line.strip() for line in f.readlines() if line.strip()]
     
-    # Fallback: Tenta ler da pasta local (Só funciona no VS Code)
+    # Fallback: Lê da pasta (Funciona localmente)
     elif os.path.exists("../data/train"):
         return sorted(os.listdir("../data/train"))
     
-    st.warning("Aviso: classes.txt não encontrado. O aplicativo pode errar os nomes.")
+    st.warning("Aviso: classes.txt não encontrado. Nomes podem estar incorretos.")
     return []
 
 def process_image(image_data, model):
@@ -169,7 +163,7 @@ def process_image(image_data, model):
         
     size = (224, 224)
     image = ImageOps.fit(image_data, size, Image.Resampling.LANCZOS)
-    image = image.convert('RGB') # Garante 3 canais
+    image = image.convert('RGB') # Garante 3 canais (evita erro de transparência)
     img = np.asarray(image)
     img = img / 255.0
     img_reshape = img[np.newaxis, ...]
@@ -180,29 +174,23 @@ def process_image(image_data, model):
 # --- 5. INTERFACE PRINCIPAL ---
 
 st.markdown("<h1 style='text-align: center; font-size: 3rem;'>GemStone AI</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #aecbb6; margin-bottom: 20px;'>Identificação profissional de gemas via Inteligência Artificial.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #aecbb6; margin-bottom: 30px;'>Identificação profissional de gemas via Inteligência Artificial.</p>", unsafe_allow_html=True)
 
 with st.spinner('Carregando inteligência artificial...'):
     model = load_model()
     class_names = get_class_names()
 
-# --- INPUT UNIFICADO ---
+# --- INPUT UNIFICADO (Mobile Friendly) ---
 st.markdown("### 💎 Analisar Pedra")
 
-# Botão principal (Funciona como Drag&Drop no PC e Câmera no Celular)
-upload_file = st.file_uploader(
-    "Tirar Foto ou Escolher da Galeria", 
+# Este componente único serve para tudo:
+# - No PC: Abre janela de arquivos (Drag & Drop)
+# - No Celular: Pergunta "Câmera" ou "Arquivos"
+image_to_process = st.file_uploader(
+    "Toque para tirar uma foto ou carregar imagem", 
     type=["jpg", "png", "jpeg"],
     key="main_uploader"
 )
-
-# Opção Webcam PC (Escondida)
-camera_file = None
-with st.expander("📷 Webcam (Apenas PC)"):
-    camera_file = st.camera_input("Capturar agora")
-
-# Lógica de prioridade
-image_to_process = camera_file if camera_file is not None else upload_file
 
 if image_to_process is not None:
     image = Image.open(image_to_process)
@@ -210,6 +198,7 @@ if image_to_process is not None:
     col_img, col_data = st.columns([1, 1.5])
     
     with col_img:
+        # Usa use_container_width para evitar o warning amarelo
         st.image(image, use_container_width=True, caption="Amostra")
     
     with col_data:
@@ -224,13 +213,13 @@ if image_to_process is not None:
                         result_index = np.argmax(predictions)
                         confidence = np.max(predictions) * 100
                         
-                        # Proteção contra lista de classes desatualizada
+                        # Proteção de index
                         if result_index < len(class_names):
                             pedra_ingles = class_names[result_index]
                         else:
                             pedra_ingles = "Desconhecido"
 
-                        # Busca info
+                        # Busca info no dicionário
                         info = gem_info.get(pedra_ingles, {
                             "name": pedra_ingles, 
                             "mohs": "?", 
@@ -257,9 +246,10 @@ if image_to_process is not None:
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        # Debug discreto no rodapé
+                        # Debug discreto (pode remover depois)
                         st.markdown(f"<div class='debug-box'>ID Técnico: {pedra_ingles}</div>", unsafe_allow_html=True)
 else:
+    # Placeholder visual
     st.markdown("""
         <div style="text-align: center; padding: 40px; border: 1px dashed #333; border-radius: 10px; opacity: 0.5;">
             <p>Aguardando amostra...</p>
